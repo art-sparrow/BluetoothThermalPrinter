@@ -16,7 +16,6 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
-import io.flutter.plugin.common.PluginRegistry.Registrar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
@@ -25,20 +24,14 @@ import java.io.OutputStream
 import java.util.*
 import androidx.annotation.NonNull
 
-
 private const val TAG = "====> mio: "
 private var outputStream: OutputStream? = null
 private lateinit var mac: String
-//val REQUEST_ENABLE_BT = 2
 
-class BluetoothThermalPrinterPlugin: FlutterPlugin, MethodCallHandler{
-  /// The MethodChannel that will the communication between Flutter and native Android
-  ///
-  /// This local reference serves to register the plugin with the Flutter Engine and unregister it
-  /// when the Flutter Engine is detached from the Activity
+class BluetoothThermalPrinterPlugin : FlutterPlugin, MethodCallHandler {
   private lateinit var mContext: Context
-  private lateinit var channel : MethodChannel
-  private lateinit var state:String
+  private lateinit var channel: MethodChannel
+  private lateinit var state: String
 
   override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
     channel = MethodChannel(flutterPluginBinding.binaryMessenger, "bluetooth_thermal_printer")
@@ -47,162 +40,121 @@ class BluetoothThermalPrinterPlugin: FlutterPlugin, MethodCallHandler{
   }
 
   override fun onMethodCall(@NonNull call: MethodCall, @NonNull result: Result) {
-    if (call.method == "getPlatformVersion") {
-      result.success("Android ${android.os.Build.VERSION.RELEASE}")
-    }else if (call.method == "getBatteryLevel") {
-      val batteryLevel = getBatteryLevel()
-      if (batteryLevel != -1) {
-        result.success(batteryLevel)
-      } else {
-        result.error("UNAVAILABLE", "Battery level not available.", null)
+    when (call.method) {
+      "getPlatformVersion" -> {
+        result.success("Android ${android.os.Build.VERSION.RELEASE}")
       }
-    }else if (call.method == "BluetoothStatus") {
-      var state:String = "false"
-      val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
-      if (bluetoothAdapter != null && bluetoothAdapter.isEnabled) {
-        state = "true"
+      "getBatteryLevel" -> {
+        val batteryLevel = getBatteryLevel()
+        if (batteryLevel != -1) {
+          result.success(batteryLevel)
+        } else {
+          result.error("UNAVAILABLE", "Battery level not available.", null)
+        }
       }
-      result.success(state)
-    }else if (call.method == "connectionStatus") {
-
-      if(outputStream != null) {
-        try{
-          outputStream?.run {
-            write(" ".toByteArray())
+      "BluetoothStatus" -> {
+        val state = if (BluetoothAdapter.getDefaultAdapter()?.isEnabled == true) "true" else "false"
+        result.success(state)
+      }
+      "connectionStatus" -> {
+        if (outputStream != null) {
+          try {
+            outputStream?.write(" ".toByteArray())
             result.success("true")
-            //Log.d(TAG, "step yes connection")
+          } catch (e: Exception) {
+            result.success("false")
+            outputStream = null
+            showToast("Device was disconnected, reconnect")
           }
-        }catch (e: Exception){
+        } else {
           result.success("false")
-          outputStream = null
-          ShowToast("Device was disconnected, reconnect")
-          //Log.d(TAG, "state print: ${e.message}")
-        }
-      }else{
-        result.success("false")
-        //Log.d(TAG, "no paso es false ")
-      }
-
-    } else if (call.method == "connectPrinter") {
-      var printerMAC = call.arguments.toString();
-      if(printerMAC.length>0){
-        mac = printerMAC;
-      }else{
-        result.success("false")
-      }
-      GlobalScope.launch(Dispatchers.Main) {
-        if(outputStream == null) {
-          outputStream = connect()?.also {
-            //result.success("true")
-            //Toast.makeText(this@MainActivity, "Connected to printer", Toast.LENGTH_SHORT).show()
-          }.apply {
-            result.success(state)
-            //Log.d(TAG, "finished: Connection state:$state")
-          }
         }
       }
-     }else if (call.method == "disconnectPrinter") {
-      GlobalScope.launch(Dispatchers.Main) {
-        if(outputStream != null) {
-          outputStream = disconnect()?.also {
-            //result.success("true")
-            //Toast.makeText(this@MainActivity, "Connected to printer", Toast.LENGTH_SHORT).show()
-          }.apply {
-            result.success("true")
-            //Log.d(TAG, "finished: Connection state:$state")
+      "connectPrinter" -> {
+        val printerMAC = call.arguments.toString()
+        if (printerMAC.isNotEmpty()) {
+          mac = printerMAC
+          GlobalScope.launch(Dispatchers.Main) {
+            if (outputStream == null) {
+              outputStream = connect()?.also {
+                result.success(state)
+              }
+            }
           }
-        }
-      }
-     } else if (call.method == "writeBytes") {
-
-      var lista: List<Int> = call.arguments as List<Int>
-      var bytes: ByteArray = "\n".toByteArray()
-
-      lista.forEach {
-        bytes += it.toByte() //Log.d(TAG, "foreach: ${it}")
-      }
-      if(outputStream != null) {
-        try{
-          outputStream?.run {
-            write(bytes)
-            result.success("true")
-          }
-        }catch (e: Exception){
+        } else {
           result.success("false")
-          outputStream = null
-          ShowToast("Device was disconnected, reconnect")
-          // Log.d(TAG, "state print: ${e.message}")
-          /*var ex:String = e.message.toString()
-          if(ex=="Broken pipe"){
-            Log.d(TAG, "Device was disconnected, reconnect")
-            ShowToast("Device was disconnected, reconnect")
-          }*/
         }
-      }else{
-        result.success("false")
       }
-
-    }else if (call.method == "printText") {
-
-      var stringArrived: String = call.arguments.toString()
-      //var list = stringArrived.split("*")
-      //println("list ${list.toString()}")
-
-      if(outputStream != null) {
-        try{
-          var size:Int = 0
-          var texto:String = ""
-          var line = stringArrived.split("//")
-          //Log.d(TAG, "list arrived: ${line.size}")
-          if(line.size>1) {
-            size = line[0].toInt()
-            texto = line[1]
-            if (size < 1 || size > 5) size = 2
-          }else{
-            size = 2
-            texto = stringArrived
-            //Log.d(TAG, "list came 2 text: ${texto} size: $size")
+      "disconnectPrinter" -> {
+        GlobalScope.launch(Dispatchers.Main) {
+          if (outputStream != null) {
+            outputStream = disconnect()?.also {
+              result.success("true")
+            }
           }
+        }
+      }
+      "writeBytes" -> {
+        val lista: List<Int> = call.arguments as List<Int>
+        var bytes: ByteArray = "\n".toByteArray()
+        lista.forEach { bytes += it.toByte() }
 
-          outputStream?.run {
-            write(setBytes.size[0])
-            write(setBytes.cancelar_chino)
-            write(setBytes.caracteres_escape)
-            write(setBytes.size[size])
-            write(texto.toByteArray(charset("iso-8859-1")))
+        if (outputStream != null) {
+          try {
+            outputStream?.write(bytes)
             result.success("true")
+          } catch (e: Exception) {
+            result.success("false")
+            outputStream = null
+            showToast("Device was disconnected, reconnect")
           }
-        }catch (e: Exception){
+        } else {
           result.success("false")
-          outputStream = null
-          ShowToast("Device was disconnected, reconnect")
         }
-      }else{
-        result.success("false")
       }
+      "printText" -> {
+        val stringArrived: String = call.arguments.toString()
+        val line = stringArrived.split("//")
+        val size = if (line.size > 1) line[0].toInt().coerceIn(1, 5) else 2
+        val texto = if (line.size > 1) line[1] else stringArrived
 
-    }else if (call.method == "bluetothLinked") {
-
-      var list:List<String> = getLinkedDevices()
-
-      result.success(list)
-
-    }else {
-      result.notImplemented()
+        if (outputStream != null) {
+          try {
+            outputStream?.run {
+              write(setBytes.size[0])
+              write(setBytes.cancelar_chino)
+              write(setBytes.caracteres_escape)
+              write(setBytes.size[size])
+              write(texto.toByteArray(charset("iso-8859-1")))
+              result.success("true")
+            }
+          } catch (e: Exception) {
+            result.success("false")
+            outputStream = null
+            showToast("Device was disconnected, reconnect")
+          }
+        } else {
+          result.success("false")
+        }
+      }
+      "bluetothLinked" -> {
+        val list = getLinkedDevices()
+        result.success(list)
+      }
+      else -> {
+        result.notImplemented()
+      }
     }
   }
 
   private fun getBatteryLevel(): Int {
-    val batteryLevel: Int
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-      val batteryManager = mContext?.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
-      batteryLevel = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      val batteryManager = mContext.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+      batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
     } else {
-      val intent = ContextWrapper(mContext?.applicationContext).registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-      batteryLevel = intent!!.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) * 100 / intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+      val intent = ContextWrapper(mContext.applicationContext).registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+      intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)?.times(100)?.div(intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)) ?: -1
     }
-
-    return batteryLevel
   }
 
   private suspend fun connect(): OutputStream? {
@@ -212,29 +164,25 @@ class BluetoothThermalPrinterPlugin: FlutterPlugin, MethodCallHandler{
       val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
       if (bluetoothAdapter != null && bluetoothAdapter.isEnabled) {
         try {
-          val bluetoothAddress = mac//"66:02:BD:06:18:7B" // replace with your device's address
-          val bluetoothDevice = bluetoothAdapter.getRemoteDevice(bluetoothAddress)
-          val bluetoothSocket = bluetoothDevice?.createRfcommSocketToServiceRecord(
-                  UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+          val bluetoothDevice = bluetoothAdapter.getRemoteDevice(mac)
+          val bluetoothSocket = bluetoothDevice.createRfcommSocketToServiceRecord(
+            UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
           )
           bluetoothAdapter.cancelDiscovery()
-          bluetoothSocket?.connect()
-          if (bluetoothSocket!!.isConnected) {
-            outputStream = bluetoothSocket!!.outputStream
+          bluetoothSocket.connect()
+          if (bluetoothSocket.isConnected) {
+            outputStream = bluetoothSocket.outputStream
             state = "true"
-            //outputStream.write("\n".toByteArray())
-          }else{
+          } else {
             state = "false"
-            Log.d(TAG, "Disconnected: ")
+            Log.d(TAG, "Disconnected")
           }
-          //bluetoothSocket?.close()
-        } catch (e: Exception){
+        } catch (e: Exception) {
           state = "false"
-          var code:Int = e.hashCode() //1535159 off //
-          Log.d(TAG, "connect: ${e.message} code $code")
+          Log.d(TAG, "connect: ${e.message}")
           outputStream?.close()
         }
-      }else{
+      } else {
         state = "false"
         Log.d(TAG, "Adapter problem")
       }
@@ -245,131 +193,71 @@ class BluetoothThermalPrinterPlugin: FlutterPlugin, MethodCallHandler{
   private suspend fun disconnect(): OutputStream? {
     state = "false"
     return withContext(Dispatchers.IO) {
-      var outputStream: OutputStream? = outputStream
       val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
       if (bluetoothAdapter != null && bluetoothAdapter.isEnabled) {
         try {
-          if(mac.length>0) {
-          val bluetoothAddress = mac
-          val bluetoothDevice = bluetoothAdapter.getRemoteDevice(bluetoothAddress)
-          var bluetoothSocket = bluetoothDevice.createRfcommSocketToServiceRecord(
-                  UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
-          )
-          bluetoothSocket.close()
-          //bluetoothSocket=null
-        }
-          Log.d(TAG, "Disconnected: ")
+          if (mac.isNotEmpty()) {
+            val bluetoothDevice = bluetoothAdapter.getRemoteDevice(mac)
+            val bluetoothSocket = bluetoothDevice.createRfcommSocketToServiceRecord(
+              UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+            )
+            bluetoothSocket.close()
+          }
+          Log.d(TAG, "Disconnected")
           outputStream?.close()
-          outputStream=null
-        } catch (e: Exception){
+          outputStream = null
+        } catch (e: Exception) {
           state = "false"
-          var code:Int = e.hashCode() //1535159 off //
-          Log.d(TAG, "connect: ${e.message} code $code")
+          Log.d(TAG, "disconnect: ${e.message}")
           outputStream?.close()
         }
-      }else{
+      } else {
         state = "false"
-        outputStream=null
+        outputStream = null
         Log.d(TAG, "Adapter problem")
       }
       outputStream
     }
   }
 
-  private fun getLinkedDevices():List<String>{
-
-    val listItems: MutableList<String> = mutableListOf()
-
-    val bluetoothAdapter: BluetoothAdapter? = BluetoothAdapter.getDefaultAdapter()
-    if (bluetoothAdapter == null) {
-      //lblmsj.setText("This application needs a phone with bluetooth")
+  private fun getLinkedDevices(): List<String> {
+    val listItems = mutableListOf<String>()
+    val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+    if (bluetoothAdapter?.isEnabled == true) {
+      bluetoothAdapter.bondedDevices?.forEach { device ->
+        listItems.add("${device.name}#${device.address}")
+      }
     }
-    //if blue tooth is not on
-    if (bluetoothAdapter?.isEnabled == false) {
-      //val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
-      //startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT)
-      //ShowToast("Bluetooth off")
-    }
-    //search bluetooth
-    //Log.d(TAG, "searching for devices: ")
-    val pairedDevices: Set<BluetoothDevice>? = bluetoothAdapter?.bondedDevices
-    pairedDevices?.forEach { device ->
-      val deviceName = device.name
-      val deviceHardwareAddress = device.address
-      listItems.add("$deviceName#$deviceHardwareAddress")
-      //Log.d(TAG, "device: ${device.name}")
-    }
-
-    return listItems;
+    return listItems
   }
 
-  private fun ShowToast(message: String){
+  private fun showToast(message: String) {
     Toast.makeText(mContext, message, Toast.LENGTH_SHORT).show()
-  }
-
-  class setBytes(){
-    companion object {
-      //val info = "This is info"
-      //fun getMoreInfo():String { return "This is more fun" }
-
-      val enter = "\n".toByteArray()
-      val resetear_impresora = byteArrayOf(0x1b, 0x40, 0x0a)
-      val cancelar_chino = byteArrayOf(0x1C, 0x2E)
-      val caracteres_escape = byteArrayOf(0x1B, 0x74, 0x10)
-
-      val size = arrayOf(
-              byteArrayOf(0x1d, 0x21, 0x00), // La fuente no se agranda 0
-              byteArrayOf(0x1b, 0x4d, 0x01), // Fuente ASCII comprimida 1
-              byteArrayOf(0x1b, 0x4d, 0x00), //Fuente estándar ASCII    2
-              byteArrayOf(0x1d, 0x21, 0x11), // Altura doblada 3
-              byteArrayOf(0x1d, 0x21, 0x22), // Altura doblada 4
-              byteArrayOf(0x1d, 0x21, 0x33) // Altura doblada 5
-      )
-
-
-      //deprecated codes
-      const val HT: Byte = 9
-      const val LF: Byte = 10
-      const val CR: Byte = 13
-      const val ESC: Byte = 27
-      const val DLE: Byte = 16
-      const val GS: Byte = 29
-      const val FS: Byte = 28
-      const val STX: Byte = 2
-      const val US: Byte = 31
-      const val CAN: Byte = 24
-      const val CLR: Byte = 12
-      const val EOT: Byte = 4
-      val INIT = byteArrayOf(27, 64)
-      var FEED_LINE = byteArrayOf(10)
-      var SELECT_FONT_A = byteArrayOf(20, 33, 0)
-      var SET_BAR_CODE_HEIGHT = byteArrayOf(29, 104, 100)
-      var PRINT_BAR_CODE_1 = byteArrayOf(29, 107, 2)
-      var SEND_NULL_BYTE = byteArrayOf(0)
-      var SELECT_PRINT_SHEET = byteArrayOf(27, 99, 48, 2)
-      var FEED_PAPER_AND_CUT = byteArrayOf(29, 86, 66, 0)
-      var SELECT_CYRILLIC_CHARACTER_CODE_TABLE = byteArrayOf(27, 116, 17)
-      var SELECT_BIT_IMAGE_MODE = byteArrayOf(27, 42, 33, -128, 0)
-      var SET_LINE_SPACING_24 = byteArrayOf(27, 51, 24)
-      var SET_LINE_SPACING_30 = byteArrayOf(27, 51, 30)
-      var TRANSMIT_DLE_PRINTER_STATUS = byteArrayOf(16, 4, 1)
-      var TRANSMIT_DLE_OFFLINE_PRINTER_STATUS = byteArrayOf(16, 4, 2)
-      var TRANSMIT_DLE_ERROR_STATUS = byteArrayOf(16, 4, 3)
-      var TRANSMIT_DLE_ROLL_PAPER_SENSOR_STATUS = byteArrayOf(16, 4, 4)
-      val ESC_FONT_COLOR_DEFAULT = byteArrayOf(27, 114, 0)
-      val FS_FONT_ALIGN = byteArrayOf(28, 33, 1, 27, 33, 1)
-      val ESC_ALIGN_LEFT = byteArrayOf(27, 97, 0)
-      val ESC_ALIGN_RIGHT = byteArrayOf(27, 97, 2)
-      val ESC_ALIGN_CENTER = byteArrayOf(27, 97, 1)
-      val ESC_CANCEL_BOLD = byteArrayOf(27, 69, 0)
-      val ESC_HORIZONTAL_CENTERS = byteArrayOf(27, 68, 20, 28, 0)
-      val ESC_CANCLE_HORIZONTAL_CENTERS = byteArrayOf(27, 68, 0)
-      val ESC_ENTER = byteArrayOf(27, 74, 64)
-      val PRINTE_TEST = byteArrayOf(29, 40, 65)
-    }
   }
 
   override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
     channel.setMethodCallHandler(null)
+  }
+
+  companion object {
+    val setBytes = SetBytes()
+
+    class SetBytes {
+      companion object {
+        val enter = "\n".toByteArray()
+        val resetear_impresora = byteArrayOf(0x1b, 0x40, 0x0a)
+        val cancelar_chino = byteArrayOf(0x1C, 0x2E)
+        val caracteres_escape = byteArrayOf(0x1B, 0x74, 0x10)
+
+        val size = arrayOf(
+          byteArrayOf(0x1d, 0x21, 0x00), // La fuente no se agranda 0
+          byteArrayOf(0x1b, 0x4d, 0x01), // Fuente ASCII comprimida 1
+          byteArrayOf(0x1b, 0x4d, 0x00), // Fuente estándar ASCII 2
+          byteArrayOf(0x1d, 0x21, 0x11), // Altura doblada 3
+          byteArrayOf(0x1d, 0x21, 0x22), // Altura doblada 4
+          byteArrayOf(0x1d, 0x21, 0x33) // Altura doblada 5
+        )
+      }
+    }
   }
 }
