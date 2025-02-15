@@ -121,10 +121,10 @@ class BluetoothThermalPrinterPlugin : FlutterPlugin, MethodCallHandler {
         if (outputStream != null) {
           try {
             outputStream?.run {
-              write(setBytes.size[0])
-              write(setBytes.cancelar_chino)
-              write(setBytes.caracteres_escape)
-              write(setBytes.size[size])
+              write(BluetoothThermalPrinterPlugin.setBytes.size[0])
+              write(BluetoothThermalPrinterPlugin.setBytes.cancelar_chino)
+              write(BluetoothThermalPrinterPlugin.setBytes.caracteres_escape)
+              write(BluetoothThermalPrinterPlugin.setBytes.size[size])
               write(texto.toByteArray(charset("iso-8859-1")))
               result.success("true")
             }
@@ -243,21 +243,18 @@ class BluetoothThermalPrinterPlugin : FlutterPlugin, MethodCallHandler {
     val setBytes = SetBytes()
 
     class SetBytes {
-      companion object {
-        val enter = "\n".toByteArray()
-        val resetear_impresora = byteArrayOf(0x1b, 0x40, 0x0a)
-        val cancelar_chino = byteArrayOf(0x1C, 0x2E)
-        val caracteres_escape = byteArrayOf(0x1B, 0x74, 0x10)
-
-        val size = arrayOf(
-          byteArrayOf(0x1d, 0x21, 0x00), // La fuente no se agranda 0
-          byteArrayOf(0x1b, 0x4d, 0x01), // Fuente ASCII comprimida 1
-          byteArrayOf(0x1b, 0x4d, 0x00), // Fuente estándar ASCII 2
-          byteArrayOf(0x1d, 0x21, 0x11), // Altura doblada 3
-          byteArrayOf(0x1d, 0x21, 0x22), // Altura doblada 4
-          byteArrayOf(0x1d, 0x21, 0x33) // Altura doblada 5
-        )
-      }
+      val enter = "\n".toByteArray()
+      val resetear_impresora = byteArrayOf(0x1b, 0x40, 0x0a)
+      val cancelar_chino = byteArrayOf(0x1C, 0x2E)
+      val caracteres_escape = byteArrayOf(0x1B, 0x74, 0x10)
+      val size = arrayOf(
+        byteArrayOf(0x1d, 0x21, 0x00), // 0
+        byteArrayOf(0x1b, 0x4d, 0x01), // 1
+        byteArrayOf(0x1b, 0x4d, 0x00), // 2
+        byteArrayOf(0x1d, 0x21, 0x11), // 3
+        byteArrayOf(0x1d, 0x21, 0x22), // 4
+        byteArrayOf(0x1d, 0x21, 0x33)  // 5
+      )
     }
   }
 }
