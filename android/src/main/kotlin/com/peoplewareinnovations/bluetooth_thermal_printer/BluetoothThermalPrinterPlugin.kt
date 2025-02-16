@@ -98,11 +98,17 @@ class BluetoothThermalPrinterPlugin : FlutterPlugin, MethodCallHandler {
         }
       }
       "writeBytes" -> {
-        val lista: List<Int>? = call.arguments as? List<Int>
+        val lista: List<Int>? = if (call.arguments is List<*>) {
+          (call.arguments as List<*>).filterIsInstance<Int>()
+        } else {
+          null
+        }
+
         if (lista == null) {
           result.error("INVALID_ARGUMENTS", "Arguments must be a list of integers", null)
           return
         }
+
         var bytes: ByteArray = "\n".toByteArray()
         lista.forEach { bytes += it.toByte() }
 
